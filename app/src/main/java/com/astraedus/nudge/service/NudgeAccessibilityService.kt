@@ -16,6 +16,7 @@ import com.astraedus.nudge.data.repository.BlockRuleRepository
 import com.astraedus.nudge.data.repository.UsageRepository
 import com.astraedus.nudge.domain.WebDomainMatcher
 import com.astraedus.nudge.domain.block.CooldownGate
+import com.astraedus.nudge.domain.inapp.FeatureExitGuard
 import com.astraedus.nudge.domain.inapp.ReelPeekSession
 import com.astraedus.nudge.domain.lock.StrictModeEscapeGuard
 import com.astraedus.nudge.domain.model.BlockDecision
@@ -124,6 +125,12 @@ class NudgeAccessibilityService : AccessibilityService() {
      * a value captured on that thread, never the object.
      */
     private val reelPeek = ReelPeekSession()
+
+    /**
+     * Bounds the "back out of the feature instead of showing the overlay" enforcement — see
+     * [FeatureExitGuard] for why an unbounded version walks the user out of the app.
+     */
+    private val featureExitGuard = FeatureExitGuard()
 
     private lateinit var interactionHandler: InteractionHandler
     private lateinit var timeRemainingHandler: TimeRemainingHandler
@@ -1475,6 +1482,7 @@ class NudgeAccessibilityService : AccessibilityService() {
         // back on they are somewhere new, and a stale "already swiped" would block the first reel
         // they open for no reason a user could explain.
         reelPeek.reset()
+        featureExitGuard.reset()
         serviceScope.launch(Dispatchers.Main) { hideAllOverlays() }
     }
 
@@ -1669,11 +1677,9 @@ class NudgeAccessibilityService : AccessibilityService() {
                     "handling block package=$packageName mode=${decision.mode} " +
                         "delaySeconds=${decision.delaySeconds} grayscale=${decision.grayscale}"
                 )
-                if (decision.grayscale) {
-                    entryPoint.grayscaleManager().enableGrayscale()
-                    grayscaleActiveForPackage = packageName
-                }
-
+                // Logged BEFORE the two enforcement paths diverge, so a block enforced by
+                // backing out of the feature counts in the stats exactly like one enforced by the
+                // overlay. It is the same block; only the way the user is stopped differs.
                 entryPoint.usageRepository().logEvent(
                     UsageEvent(
                         packageName = packageName,
@@ -1681,6 +1687,23 @@ class NudgeAccessibilityService : AccessibilityService() {
                         blockMode = decision.mode.name
                     )
                 )
+
+                if (decision.exitFeature && featureKey != null &&
+                    exitFeature(packageName, featureKey)
+                ) {
+                    return
+                }
+
+                // Grayscale belongs to the OVERLAY path only, and is therefore applied after the
+                // exit attempt rather than before it. Grayscale is cleared when the foreground
+                // PACKAGE changes; backing out of a feature leaves the user in the same app, so
+                // enabling it here would grey out the whole of Instagram for the rest of the visit,
+                // long after the half-second of Reels it was meant for. A sticky screen-wide effect
+                // nobody asked for is not a softer stop.
+                if (decision.grayscale) {
+                    entryPoint.grayscaleManager().enableGrayscale()
+                    grayscaleActiveForPackage = packageName
+                }
 
                 val overlayIntent = Intent(applicationContext, BlockOverlayActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -1708,11 +1731,57 @@ class NudgeAccessibilityService : AccessibilityService() {
             }
 
             is BlockDecision.Allow -> {
+                // The feature stopped blocking, so a preceding exit did its job: hand the guard its
+                // budget back. Without this, three swipes over a long session would permanently
+                // downgrade the rule to the overlay it was configured not to use.
+                featureKey?.let { featureExitGuard.onFeatureCleared(featureExitGuard.key(packageName, it)) }
                 entryPoint.usageRepository().logEvent(
                     UsageEvent(packageName = packageName)
                 )
             }
         }
+    }
+
+    /**
+     * Enforce a block by backing OUT OF THE FEATURE, leaving the user in the app.
+     *
+     * The block overlay's only exit is the launcher ([BlockOverlayActivity] navigates home), so a
+     * Reels rule ejected the user out of Instagram entirely even though the rule was only ever about
+     * Reels. For a rule that means "not this surface", leaving the surface is the proportionate stop.
+     *
+     * Uses the accessibility global action rather than anything app-specific: there is no reliable
+     * way to ask another app to close one of its own screens, and `GLOBAL_ACTION_BACK` is the same
+     * mechanism the auto-kick already uses for `GLOBAL_ACTION_HOME`.
+     *
+     * @return true when the Back was dispatched and the caller must NOT show the overlay. False
+     *   means either the guard is spent or the dispatch failed, and the overlay has to do the job —
+     *   which is the behaviour this feature is a softer alternative to, so falling back to it is
+     *   always safe.
+     */
+    private suspend fun exitFeature(packageName: String, featureKey: String): Boolean {
+        val key = featureExitGuard.key(packageName, featureKey)
+        if (!featureExitGuard.allowExit(key, System.currentTimeMillis())) {
+            entryPoint.nudgeLogger().i(
+                "feature exit budget spent package=$packageName feature=$featureKey " +
+                    "— falling back to the block overlay"
+            )
+            return false
+        }
+
+        // performGlobalAction is a service call; keep it on the main thread like every other
+        // window-touching call in this class. handleDecision runs on the IO scope.
+        val dispatched = withContext(Dispatchers.Main) {
+            try {
+                performGlobalAction(GLOBAL_ACTION_BACK)
+            } catch (e: Exception) {
+                entryPoint.nudgeLogger().w("feature exit failed package=$packageName", e)
+                false
+            }
+        }
+        entryPoint.nudgeLogger().i(
+            "feature exit package=$packageName feature=$featureKey dispatched=$dispatched"
+        )
+        return dispatched
     }
 
     /**

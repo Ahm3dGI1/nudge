@@ -190,6 +190,25 @@ class NudgeDatabaseMigrationTest {
         )
     }
 
+    /**
+     * Defaults OFF, and this is the more important of the two boolean defaults: the overlay is the
+     * STRONGER stop, so defaulting to 1 would silently soften every in-app feature block in the
+     * wild. A migration must never move a user's rules toward blocking less.
+     */
+    @Test
+    fun `MIGRATION_11_12 adds exitFeatureOnBlock defaulting to the block overlay`() {
+        val db = RecordingDatabase()
+
+        NudgeDatabase.MIGRATION_11_12.migrate(db.proxy)
+
+        assertEquals(
+            listOf(
+                "ALTER TABLE block_rules ADD COLUMN exitFeatureOnBlock INTEGER NOT NULL DEFAULT 0"
+            ),
+            db.sql
+        )
+    }
+
     @Test
     fun `all migrations registered from version 1 to current`() {
         val allMigrations = listOf(
@@ -202,10 +221,11 @@ class NudgeDatabaseMigrationTest {
             NudgeDatabase.MIGRATION_7_8,
             NudgeDatabase.MIGRATION_8_9,
             NudgeDatabase.MIGRATION_9_10,
-            NudgeDatabase.MIGRATION_10_11
+            NudgeDatabase.MIGRATION_10_11,
+            NudgeDatabase.MIGRATION_11_12
         )
 
-        val currentVersion = 11
+        val currentVersion = 12
 
         // Every version gap from 1 to current must have a migration
         for (v in 1 until currentVersion) {

@@ -315,6 +315,56 @@ class RuleExporterTest {
     }
 
     /**
+     * The softer STOP has to survive a backup too, in both directions: losing it would re-arm the
+     * full block screen the user turned off, and inventing it would silently downgrade a block.
+     */
+    @Test
+    fun `roundtrip preserves exitFeatureOnBlock`() {
+        val rules = listOf(
+            BlockRule(
+                id = 1,
+                packageName = "com.google.android.youtube",
+                mode = "HARD_BLOCK",
+                enabled = true,
+                inAppFeatures = "SHORTS",
+                exitFeatureOnBlock = true
+            )
+        )
+
+        val json = exporter.exportRules(rules, emptyList(), emptyMap())
+        val result = exporter.importRules(json)
+
+        assertNull(result.error)
+        assertEquals(1, result.rules.size)
+        assertTrue(result.rules[0].exitFeatureOnBlock)
+    }
+
+    /** Absent = the block overlay, which is what every pre-column rule did. */
+    @Test
+    fun `import of an export without exitFeatureOnBlock keeps the block screen`() {
+        val json = """
+        {
+          "version": 1,
+          "exportedAt": 1700000000000,
+          "rules": [{
+            "packageName": "com.google.android.youtube",
+            "groupName": null,
+            "mode": "HARD_BLOCK",
+            "delaySeconds": 15,
+            "enabled": true,
+            "inAppFeatures": "SHORTS"
+          }],
+          "groups": []
+        }
+        """.trimIndent()
+
+        val result = exporter.importRules(json)
+
+        assertNull(result.error)
+        assertFalse(result.rules[0].exitFeatureOnBlock)
+    }
+
+    /**
      * An export written before the column existed, or a hand-edited file. Absent must mean OFF: a
      * missing key can never be allowed to hand a restored rule an allowance its author never granted.
      */

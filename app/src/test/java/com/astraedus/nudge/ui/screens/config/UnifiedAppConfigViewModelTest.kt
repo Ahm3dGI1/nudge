@@ -229,7 +229,7 @@ class UnifiedAppConfigViewModelTest {
         val vm = viewModel()
 
         assertTrue(
-            vm.enablesSingleReel(
+            vm.weakensFeatureOverride(
                 loaded = mapOf("REELS" to FeatureOverride(allowSingleReel = false)),
                 edited = mapOf("REELS" to FeatureOverride(allowSingleReel = true))
             )
@@ -241,7 +241,7 @@ class UnifiedAppConfigViewModelTest {
         val vm = viewModel()
 
         assertFalse(
-            vm.enablesSingleReel(
+            vm.weakensFeatureOverride(
                 loaded = mapOf("REELS" to FeatureOverride(allowSingleReel = true)),
                 edited = mapOf("REELS" to FeatureOverride(allowSingleReel = false))
             )
@@ -253,7 +253,7 @@ class UnifiedAppConfigViewModelTest {
         val vm = viewModel()
 
         assertFalse(
-            vm.enablesSingleReel(
+            vm.weakensFeatureOverride(
                 loaded = mapOf("REELS" to FeatureOverride(allowSingleReel = true)),
                 edited = mapOf("REELS" to FeatureOverride(allowSingleReel = true))
             )
@@ -270,7 +270,7 @@ class UnifiedAppConfigViewModelTest {
         val vm = viewModel()
 
         assertFalse(
-            vm.enablesSingleReel(
+            vm.weakensFeatureOverride(
                 loaded = emptyMap(),
                 edited = mapOf("REELS" to FeatureOverride(allowSingleReel = true))
             )
@@ -282,6 +282,31 @@ class UnifiedAppConfigViewModelTest {
     fun `no overrides at all is not a weakening`() {
         val vm = viewModel()
 
-        assertFalse(vm.enablesSingleReel(loaded = emptyMap(), edited = emptyMap()))
+        assertFalse(vm.weakensFeatureOverride(loaded = emptyMap(), edited = emptyMap()))
+    }
+
+    /** The same gate covers downgrading the STOP, on any feature, not just the reel allowance. */
+    @Test
+    fun `downgrading a block to just leaving the feature is a weakening`() {
+        val vm = viewModel()
+
+        assertTrue(
+            vm.weakensFeatureOverride(
+                loaded = mapOf("SHORTS" to FeatureOverride(exitFeatureOnBlock = false)),
+                edited = mapOf("SHORTS" to FeatureOverride(exitFeatureOnBlock = true))
+            )
+        )
+    }
+
+    @Test
+    fun `restoring the block screen is not a weakening`() {
+        val vm = viewModel()
+
+        assertFalse(
+            vm.weakensFeatureOverride(
+                loaded = mapOf("SHORTS" to FeatureOverride(exitFeatureOnBlock = true)),
+                edited = mapOf("SHORTS" to FeatureOverride(exitFeatureOnBlock = false))
+            )
+        )
     }
 }

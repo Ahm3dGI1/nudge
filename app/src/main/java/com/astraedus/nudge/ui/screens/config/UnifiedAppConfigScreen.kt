@@ -932,10 +932,41 @@ private fun FeatureOverrideCard(
                 }
             }
 
+            // How the block stops you. Offered for every feature, and only once this rule actually
+            // blocks something — an INHERIT override writes no feature rule for the flag to live on.
+            if (override.mode != FeatureMode.INHERIT) {
+                Text(
+                    "When blocked",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    FilterChip(
+                        selected = !override.exitFeatureOnBlock,
+                        onClick = { onUpdate(override.copy(exitFeatureOnBlock = false)) },
+                        label = { Text("Block screen", style = MaterialTheme.typography.bodySmall) }
+                    )
+                    FilterChip(
+                        selected = override.exitFeatureOnBlock,
+                        onClick = { onUpdate(override.copy(exitFeatureOnBlock = true)) },
+                        label = { Text("Just leave", style = MaterialTheme.typography.bodySmall) }
+                    )
+                }
+                Text(
+                    if (override.exitFeatureOnBlock) {
+                        "Backs out of $featureName and leaves you in the app. No block screen, " +
+                            "and you are not sent to the home screen."
+                    } else {
+                        "Shows the full block screen, which exits to your home screen."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             // "Watch the one you were sent, then stop". Only Reels has an entry point that can
             // bound an allowance (a clip you were pointed at, as opposed to a feed you opened), and
-            // it is only meaningful once this rule actually blocks something — an INHERIT override
-            // writes no feature rule for the flag to live on.
+            // it is only meaningful once this rule actually blocks something.
             if (featureKey == ReelPeek.FEATURE_KEY && override.mode != FeatureMode.INHERIT) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

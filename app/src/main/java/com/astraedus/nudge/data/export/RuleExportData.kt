@@ -117,7 +117,13 @@ data class ExportedRule(
      * omitting the key: a backup written before this existed described rules that blocked every reel
      * surface, and that is exactly what false restores.
      */
-    val allowSingleReel: Boolean = false
+    val allowSingleReel: Boolean = false,
+    /**
+     * How a feature rule stops the user. False (the default, and what an older export means by
+     * omitting the key) is the block overlay — the behaviour those rules had.
+     * See `BlockRule.exitFeatureOnBlock`.
+     */
+    val exitFeatureOnBlock: Boolean = false
 )
 
 data class ExportedGroup(

@@ -175,7 +175,8 @@ class ImportRulesUseCase @Inject constructor(
                 webDomains = exportedRule.webDomains,
                 autoKickAfterMinutes = exportedRule.autoKickAfterMinutes,
                 webBlockMode = exportedRule.webBlockMode,
-                allowSingleReel = exportedRule.allowSingleReel
+                allowSingleReel = exportedRule.allowSingleReel,
+                exitFeatureOnBlock = exportedRule.exitFeatureOnBlock
             )
 
             repository.addRule(blockRule)

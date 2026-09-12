@@ -19,7 +19,7 @@ import com.astraedus.nudge.data.db.entity.UsageEvent
         AppGroupMember::class,
         UsageEvent::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class NudgeDatabase : RoomDatabase() {
@@ -154,6 +154,24 @@ abstract class NudgeDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE block_rules ADD COLUMN allowSingleReel INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        /**
+         * How a feature rule stops the user: block overlay (0, the historical behaviour) or simply
+         * backing out of the feature (1). See
+         * [com.astraedus.nudge.data.db.entity.BlockRule.exitFeatureOnBlock].
+         *
+         * Defaults to 0 for the same reason 10->11 does, and it is the more important default of the
+         * two: the overlay is the stronger stop, so defaulting to 1 would silently soften every
+         * in-app feature block in the wild. A migration must never move a user's rules toward
+         * blocking less.
+         */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE block_rules ADD COLUMN exitFeatureOnBlock INTEGER NOT NULL DEFAULT 0"
                 )
             }
         }

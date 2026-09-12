@@ -414,10 +414,39 @@ class RuleWeakeningTest {
         )
     }
 
-    private fun reelsRule(allowSingleReel: Boolean) = BlockRule(
+    /**
+     * Softening HOW a block stops the user is still softening: the overlay sends them to the
+     * launcher, backing out of the feature leaves them in the app one tap from the surface they were
+     * just stopped on.
+     */
+    @Test
+    fun `enabling exitFeatureOnBlock is weakening`() {
+        assertTrue(
+            RuleWeakening.isWeakening(
+                reelsRule(exitFeatureOnBlock = false),
+                reelsRule(exitFeatureOnBlock = true)
+            )
+        )
+    }
+
+    @Test
+    fun `disabling exitFeatureOnBlock is strengthening`() {
+        assertFalse(
+            RuleWeakening.isWeakening(
+                reelsRule(exitFeatureOnBlock = true),
+                reelsRule(exitFeatureOnBlock = false)
+            )
+        )
+    }
+
+    private fun reelsRule(
+        allowSingleReel: Boolean = false,
+        exitFeatureOnBlock: Boolean = false
+    ) = BlockRule(
         packageName = "com.instagram.android",
         mode = "HARD_BLOCK",
         inAppFeatures = "REELS",
-        allowSingleReel = allowSingleReel
+        allowSingleReel = allowSingleReel,
+        exitFeatureOnBlock = exitFeatureOnBlock
     )
 }

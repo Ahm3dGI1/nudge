@@ -49,6 +49,8 @@ object RuleWeakening {
      *    back to mode) lowered, or the domains removed entirely, when web blocking was configured
      *  - allowSingleReel switched on (reels opened from a DM or the feed, and the home feed itself,
      *    stop being blocked)
+     *  - exitFeatureOnBlock switched on (the block stops ejecting the user from the app and merely
+     *    backs them out of the feature, leaving them one tap from re-entering it)
      *
      * Strengthening or unchanged on all dimensions -> false.
      */
@@ -86,6 +88,11 @@ object RuleWeakening {
         // surfaces it used to block (the home feed, and any player until the first swipe). Turning
         // it off is strengthening and saves freely.
         if (!old.allowSingleReel && new.allowSingleReel) return true
+
+        // Softening HOW the block stops the user is still softening. The overlay sends them to the
+        // launcher; backing out of the feature leaves them in the app, one tap from the surface they
+        // were just stopped on. Turning it off is strengthening and saves freely.
+        if (!old.exitFeatureOnBlock && new.exitFeatureOnBlock) return true
 
         return false
     }

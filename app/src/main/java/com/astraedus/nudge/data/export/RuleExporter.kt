@@ -122,7 +122,8 @@ class RuleExporter @Inject constructor() {
                 webDomains = rule.webDomains,
                 autoKickAfterMinutes = rule.autoKickAfterMinutes,
                 webBlockMode = rule.webBlockMode,
-                allowSingleReel = rule.allowSingleReel
+                allowSingleReel = rule.allowSingleReel,
+                exitFeatureOnBlock = rule.exitFeatureOnBlock
             )
         }
 
@@ -290,6 +291,7 @@ class RuleExporter @Inject constructor() {
             obj.put("autoKickAfterMinutes", rule.autoKickAfterMinutes ?: JSONObject.NULL)
             obj.put("webBlockMode", rule.webBlockMode ?: JSONObject.NULL)
             obj.put("allowSingleReel", rule.allowSingleReel)
+            obj.put("exitFeatureOnBlock", rule.exitFeatureOnBlock)
             rulesArray.put(obj)
         }
         root.put("rules", rulesArray)
@@ -532,7 +534,10 @@ class RuleExporter @Inject constructor() {
             // Absent (an older export, or a hand-edited file) = false = block every reel surface,
             // which is what those rules meant. The default direction matters here: a missing key
             // must never be able to hand a restored rule an allowance its author never granted.
-            allowSingleReel = obj.optBoolean("allowSingleReel", false)
+            allowSingleReel = obj.optBoolean("allowSingleReel", false),
+            // Absent = false = the block overlay, which is what those rules did. Same direction as
+            // allowSingleReel: a missing key must never hand a restored rule the SOFTER stop.
+            exitFeatureOnBlock = obj.optBoolean("exitFeatureOnBlock", false)
         )
     }
 

@@ -56,5 +56,18 @@ data class BlockRule(
      * Inert on any rule that is not feature-scoped to REELS. Resolution lives in
      * [com.astraedus.nudge.domain.inapp.ReelPeek.suppresses] — never read this field raw.
      */
-    val allowSingleReel: Boolean = false
+    val allowSingleReel: Boolean = false,
+    /**
+     * How this rule STOPS the user, once it has decided to block: false (the default, and what every
+     * rule written before this column existed carries) puts the full block overlay up; true simply
+     * backs out of the feature and leaves the user in the app.
+     *
+     * Only meaningful on a FEATURE-scoped rule. The block overlay's only exit is the launcher, so a
+     * Reels rule ejected the user out of Instagram entirely even though the rule was about Reels —
+     * for a rule that only ever meant "not this surface", leaving the surface is the proportionate
+     * stop. A whole-app rule has no feature to back out of, and setting this on one does nothing:
+     * see [com.astraedus.nudge.domain.engine.BlockEngine], which only propagates it for a rule that
+     * matched the DETECTED feature.
+     */
+    val exitFeatureOnBlock: Boolean = false
 )

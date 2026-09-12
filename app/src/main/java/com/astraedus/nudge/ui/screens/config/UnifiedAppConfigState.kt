@@ -16,7 +16,13 @@ data class FeatureOverride(
      * REELS only: "watch the one you were sent, then stop". Inert on every other feature, and only
      * offered by the UI for Reels. See [com.astraedus.nudge.domain.inapp.ReelPeek].
      */
-    val allowSingleReel: Boolean = false
+    val allowSingleReel: Boolean = false,
+    /**
+     * How this feature's block stops the user: false = the block overlay (which exits to the
+     * launcher), true = back out of the feature and stay in the app. Offered for every feature, not
+     * just Reels. See [com.astraedus.nudge.data.db.entity.BlockRule.exitFeatureOnBlock].
+     */
+    val exitFeatureOnBlock: Boolean = false
 )
 
 @Immutable

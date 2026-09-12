@@ -70,7 +70,8 @@ class EvaluateBlockUseCase @Inject constructor(
                 inAppFeatures = rule.inAppFeatures?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() },
                 grayscale = rule.grayscale,
                 webDomains = rule.webDomains,
-                allowSingleReel = rule.allowSingleReel
+                allowSingleReel = rule.allowSingleReel,
+                exitFeatureOnBlock = rule.exitFeatureOnBlock
             )
         }.filterNot { rule ->
             // Applied HERE, before the rules ever reach the engine, rather than as another branch
