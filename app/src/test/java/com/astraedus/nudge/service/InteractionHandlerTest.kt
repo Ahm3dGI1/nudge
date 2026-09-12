@@ -414,12 +414,14 @@ class InteractionHandlerTest {
         var featureToReturn: InAppDetector.Feature? = null
         var detectCallCount: Int = 0
 
-        override fun detectFeature(
+        // Overrides `detect`, the one abstract member, rather than `detectFeature` -- the counter
+        // still sees every call, because the feature-only accessor delegates here.
+        override fun detect(
             packageName: String,
             rootNode: AccessibilityNodeInfo?
-        ): InAppDetector.Feature? {
+        ): InAppDetector.Detection? {
             detectCallCount++
-            return featureToReturn
+            return featureToReturn?.let { InAppDetector.Detection(it) }
         }
     }
 

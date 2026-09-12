@@ -2,6 +2,7 @@ package com.astraedus.nudge.service
 
 import android.view.accessibility.AccessibilityNodeInfo
 import com.astraedus.nudge.BuildConfig
+import com.astraedus.nudge.domain.inapp.ReelSurface
 import com.astraedus.nudge.util.NudgeLogger
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -36,10 +37,31 @@ class InAppDetector @Inject constructor(
         TIKTOK_FEED("TikTok Feed", "TIKTOK_FEED")
     }
 
+    /**
+     * What detection found: the [Feature] a rule matches on, and — for Instagram — the [ReelSurface]
+     * it was reached from.
+     *
+     * The two are separate on purpose. Rules have always matched on the feature key alone and still
+     * do; the surface answers a second question only the "watch the one you were sent" allowance
+     * asks ([com.astraedus.nudge.domain.inapp.ReelPeek]), and is null for every app and every
+     * surface that cannot answer it. A null surface must be read as "unknown", never as a value.
+     */
+    data class Detection(
+        val feature: Feature,
+        val surface: ReelSurface? = null
+    )
+
     companion object {
+        /**
+         * The one package whose surfaces are classified into a [ReelSurface]. Named because the
+         * accessibility service has to ask the same question about a scroll event, and a bare
+         * literal in two files is a pair that can drift.
+         */
+        const val INSTAGRAM_PACKAGE = "com.instagram.android"
+
         /** Packages that support in-app feature detection. */
         val SUPPORTED_PACKAGES = setOf(
-            "com.instagram.android",
+            INSTAGRAM_PACKAGE,
             "com.google.android.youtube",
             "com.zhiliaoapp.musically",
             "com.ss.android.ugc.trill"
@@ -68,6 +90,52 @@ class InAppDetector @Inject constructor(
             "com.instagram.android:id/clips_video_container",
             "com.instagram.android:id/clips_media_component"
         )
+
+        /**
+         * Instagram's bottom-navigation tabs, in the order [findActiveInstagramTab] probes them.
+         *
+         * Their mere PRESENCE is load-bearing separately from which one is selected: the reel player
+         * opened from a DM or a share link is hosted in `com.instagram.modal.ModalActivity`, which
+         * has no nav bar at all, so "clips containers and no tabs" is how a standalone player is
+         * told apart from the Reels tab. See [classifyInstagram].
+         */
+        private val INSTAGRAM_TAB_IDS = listOf(
+            "com.instagram.android:id/feed_tab",
+            "com.instagram.android:id/clips_tab",
+            "com.instagram.android:id/search_tab",
+            "com.instagram.android:id/profile_tab"
+        )
+
+        /**
+         * Scrollable containers whose scroll events mean "the user moved to the NEXT REEL", as
+         * opposed to scrolling something layered over the player (the comment sheet, a caption).
+         * Consumed by the accessibility service to spend a peek — see
+         * [com.astraedus.nudge.domain.inapp.ReelPeekSession].
+         *
+         * Only `clips_viewer_view_pager` is confirmed from a device capture; the other two are
+         * plausible siblings and cost nothing if Instagram never uses them, because an id that does
+         * not exist simply never matches. What actually carries this decision is the null branch of
+         * [isReelAdvanceScroll] — a swipe whose source we cannot identify still counts.
+         */
+        private val INSTAGRAM_CLIPS_SCROLLABLE_IDS = setOf(
+            "com.instagram.android:id/clips_viewer_view_pager",
+            "com.instagram.android:id/clips_viewer_recycler_view",
+            "com.instagram.android:id/clips_video_container"
+        )
+
+        /**
+         * True when a scroll event coming from the view identified by [viewId] should be read as a
+         * swipe to the next reel.
+         *
+         * A null [viewId] — an unidentified or unreadable scroll source — counts. The standalone
+         * player IS a full-screen pager, so the overwhelmingly likely unidentified scroll inside it
+         * is the swipe this exists to catch, and the failure direction has to be the safe one: a
+         * missed swipe is an unbounded reels session, while a false positive costs the user one
+         * early block on a clip they can re-open. Anything that IS identified and is not a clips
+         * container (the comment sheet's recycler, say) does not count.
+         */
+        fun isReelAdvanceScroll(viewId: String?): Boolean =
+            viewId == null || viewId in INSTAGRAM_CLIPS_SCROLLABLE_IDS
     }
 
     /** True if any of [viewIds] resolves in [root]. Nodes are recycled before returning. */
@@ -84,26 +152,31 @@ class InAppDetector @Inject constructor(
     }
 
     /**
-     * Attempt to detect which in-app feature is active for the given package.
+     * Attempt to detect which in-app feature is active for the given package, and — for
+     * Instagram — which surface it was reached from.
      *
-     * @return The detected [Feature], or null if no specific feature is detected
-     *   (user is in a non-feature part of the app, or detection failed).
+     * @return The [Detection], or null if no specific feature is detected (user is in a non-feature
+     *   part of the app, or detection failed).
      */
-    override fun detectFeature(packageName: String, rootNode: AccessibilityNodeInfo?): Feature? {
+    override fun detect(packageName: String, rootNode: AccessibilityNodeInfo?): Detection? {
         if (rootNode == null) {
             logger.d("feature detection skipped package=$packageName reason=null_root")
             return null
         }
         return try {
-            val feature = when (packageName) {
-                "com.instagram.android" -> detectInstagram(rootNode)
-                "com.google.android.youtube" -> detectYouTube(rootNode)
-                "com.zhiliaoapp.musically", "com.ss.android.ugc.trill" -> Feature.TIKTOK_FEED
+            val detection = when (packageName) {
+                INSTAGRAM_PACKAGE -> detectInstagram(rootNode)
+                "com.google.android.youtube" -> detectYouTube(rootNode)?.let { Detection(it) }
+                "com.zhiliaoapp.musically", "com.ss.android.ugc.trill" ->
+                    Detection(Feature.TIKTOK_FEED)
                 else -> null
             }
-            if (feature == null) dumpViewIdsForDiagnosis(packageName, rootNode)
-            logger.d("feature detection result package=$packageName feature=$feature")
-            feature
+            if (detection == null) dumpViewIdsForDiagnosis(packageName, rootNode)
+            logger.d(
+                "feature detection result package=$packageName " +
+                    "feature=${detection?.feature} surface=${detection?.surface}"
+            )
+            detection
         } catch (e: Exception) {
             logger.w("feature detection failed package=$packageName", e)
             null
@@ -154,32 +227,64 @@ class InAppDetector @Inject constructor(
         logger.d("undetected surface package=$packageName nodes=$visited viewIds=$signature")
     }
 
-    private fun detectInstagram(root: AccessibilityNodeInfo): Feature? {
-        // The reel PLAYER first, before any tab reasoning. A reel opened from a DM (or a share
-        // link, or a profile) runs in com.instagram.modal.ModalActivity, which has NO bottom nav
-        // at all — so tab-based detection cannot see it even in principle, and the user scrolled
-        // reels indefinitely with a HARD_BLOCK rule active. Keying on the player's own container
-        // covers every entry route, including the Reels tab, where these IDs are also present.
-        if (findsAnyViewId(root, INSTAGRAM_CLIPS_VIEWER_IDS)) {
-            logger.d("instagram clips viewer detected")
-            return Feature.REELS
-        }
-
+    private fun detectInstagram(root: AccessibilityNodeInfo): Detection? {
         // Use resource IDs for reliable tab detection. Instagram's bottom nav tabs:
         //   feed_tab (Home), clips_tab (Reels), search_tab (Search/Explore), profile_tab (Profile)
         // The tab FrameLayout itself has selected=false, but its child tab_icon ImageView
         // has selected=true for the active tab.
         val activeTab = findActiveInstagramTab(root)
-        logger.d("instagram active tab: $activeTab")
-        return when (activeTab) {
-            "clips_tab" -> Feature.REELS
-            "search_tab" -> Feature.EXPLORE
-            "feed_tab" -> Feature.REELS  // Home feed = reels-equivalent
-            else -> {
-                // Fallback: text-based detection for older Instagram versions
-                detectInstagramByText(root)
-            }
-        }
+        val inClipsViewer = findsAnyViewId(root, INSTAGRAM_CLIPS_VIEWER_IDS)
+        // Asked separately from [activeTab]: "no tab reads as selected" and "there is no nav bar at
+        // all" are different facts, and only the second one identifies the modal player.
+        val hasBottomNav = activeTab != null || findsAnyViewId(root, INSTAGRAM_TAB_IDS)
+        logger.d(
+            "instagram surface activeTab=$activeTab clipsViewer=$inClipsViewer nav=$hasBottomNav"
+        )
+
+        // Fallback: text-based detection for older Instagram versions. It carries no surface — a
+        // screen we could not identify structurally cannot tell us where it was reached from.
+        return classifyInstagram(activeTab, inClipsViewer, hasBottomNav)
+            ?: detectInstagramByText(root)?.let { Detection(it) }
+    }
+
+    /**
+     * Pure classification of an Instagram screen from three observations, extracted so the ORDERING
+     * — which is the whole substance of this — is unit-testable without an accessibility tree.
+     *
+     * Every branch fails toward blocking:
+     *
+     * 1. **Reels tab selected** wins over everything. Its tree carries the clips containers too, so
+     *    checking the player first (which is what this code did before the peek allowance existed)
+     *    would classify the Reels tab itself as a standalone player and make the tab peek-eligible
+     *    — a hole straight through the rule.
+     * 2. **Clips containers with no nav bar** is the modal player: a reel opened from a DM, a share
+     *    link or a profile. `com.instagram.modal.ModalActivity` has no bottom nav, which is exactly
+     *    why tab-based detection could not see it even in principle before 2026-08-08, and reels
+     *    scrolled forever past a HARD_BLOCK.
+     * 3. **Clips containers over the home feed** (nav bar present, Home still selected) is a reel
+     *    tapped out of the feed — the other entry point a peek covers.
+     * 4. **Clips containers we cannot place** (a nav bar is there but no tab reads as selected) is
+     *    treated as the Reels tab. Unverifiable is not an allowance: a peek we cannot bound is an
+     *    unbounded reels session.
+     *
+     * Returns null when nothing recognisable was found, so the caller can fall back to the
+     * text-based detection older Instagram builds need.
+     */
+    internal fun classifyInstagram(
+        activeTab: String?,
+        inClipsViewer: Boolean,
+        hasBottomNav: Boolean
+    ): Detection? = when {
+        activeTab == "clips_tab" -> Detection(Feature.REELS, ReelSurface.REELS_TAB)
+        inClipsViewer && !hasBottomNav -> Detection(Feature.REELS, ReelSurface.STANDALONE_PLAYER)
+        inClipsViewer && activeTab == "feed_tab" ->
+            Detection(Feature.REELS, ReelSurface.STANDALONE_PLAYER)
+        inClipsViewer -> Detection(Feature.REELS, ReelSurface.REELS_TAB)
+        activeTab == "search_tab" -> Detection(Feature.EXPLORE)
+        // Home feed = reels-equivalent: an infinite scroll of the same material, and what the
+        // interaction counter has always counted. A peek allowance is what opts out of it.
+        activeTab == "feed_tab" -> Detection(Feature.REELS, ReelSurface.HOME_FEED)
+        else -> null
     }
 
     /**
@@ -187,16 +292,16 @@ class InAppDetector @Inject constructor(
      * Returns the tab ID suffix (e.g. "feed_tab", "clips_tab") or null if not found.
      */
     private fun findActiveInstagramTab(root: AccessibilityNodeInfo): String? {
-        val tabIds = listOf("feed_tab", "clips_tab", "search_tab", "profile_tab")
-        for (tabId in tabIds) {
-            val nodes = root.findAccessibilityNodeInfosByViewId(
-                "com.instagram.android:id/$tabId"
-            )
+        // Derived from INSTAGRAM_TAB_IDS rather than a second hand-written list: the same four tabs
+        // now answer two questions (which one is selected, and whether a nav bar exists at all), and
+        // two copies of the set could only ever drift.
+        for (viewId in INSTAGRAM_TAB_IDS) {
+            val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
             if (nodes.isNotEmpty()) {
                 for (node in nodes) {
                     if (isTabActive(node)) {
                         recycleNodes(nodes)
-                        return tabId
+                        return viewId.substringAfterLast('/')
                     }
                 }
                 recycleNodes(nodes)
