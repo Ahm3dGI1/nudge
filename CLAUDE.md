@@ -142,7 +142,7 @@ AccessibilityService: TYPE_WINDOW_STATE_CHANGED
 
 ## Database
 
-Room DB version 11. Migrations: 1->2 (schedule/inapp/grayscale), 2->3 (userChangedMind), 3->4 (showCounter), 4->5 (autoKickAfter), 5->6 (showTimeRemaining, autoKickCooldownSeconds), 6->7 (webDomains), 7->8 (autoKickAfterMinutes), **8->9 (DROPS the dead `usage_events.durationMs` column, issue #22)**, 9->10 (`BlockRule.webBlockMode`, issue [#21](https://github.com/astraedus/nudge/issues/21); also repairs the rows that bug created), 10->11 (`BlockRule.allowSingleReel`, the single-reel allowance; defaults OFF so no existing rule changes behaviour).
+Room DB version 12. Migrations: 1->2 (schedule/inapp/grayscale), 2->3 (userChangedMind), 3->4 (showCounter), 4->5 (autoKickAfter), 5->6 (showTimeRemaining, autoKickCooldownSeconds), 6->7 (webDomains), 7->8 (autoKickAfterMinutes), **8->9 (DROPS the dead `usage_events.durationMs` column, issue #22)**, 9->10 (`BlockRule.webBlockMode`, issue [#21](https://github.com/astraedus/nudge/issues/21); also repairs the rows that bug created), 10->11 (`BlockRule.allowSingleReel`, the single-reel allowance; defaults OFF so no existing rule changes behaviour), 11->12 (`BlockRule.exitFeatureOnBlock` — enforce a feature block by backing out of the feature instead of showing the overlay; defaults OFF, the overlay being the stronger stop).
 
 `NudgeDatabaseMigrationTest` is a **JVM** test (a `SupportSQLiteDatabase` `Proxy` records the `execSQL` calls), not an instrumented one — so migrations are gated by `./gradlew test` with no device. It also asserts every version gap from 1 to the current version has a registered migration, which is what catches "bumped the version, forgot `DatabaseModule.addMigrations`".
 
