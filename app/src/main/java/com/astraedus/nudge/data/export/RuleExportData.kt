@@ -109,7 +109,15 @@ data class ExportedRule(
     val webDomains: String? = null,
     val autoKickAfterMinutes: Int? = null,
     /** Independent block mode for [webDomains]; null = inherit [mode]. See `BlockRule.webBlockMode`. */
-    val webBlockMode: String? = null
+    val webBlockMode: String? = null,
+    /**
+     * "Watch the one you were sent, then stop" for a REELS rule. See `BlockRule.allowSingleReel`.
+     *
+     * Defaults to false, which is both the column default and the meaning an OLDER export carries by
+     * omitting the key: a backup written before this existed described rules that blocked every reel
+     * surface, and that is exactly what false restores.
+     */
+    val allowSingleReel: Boolean = false
 )
 
 data class ExportedGroup(

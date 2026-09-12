@@ -16,6 +16,7 @@ import com.astraedus.nudge.data.repository.BlockRuleRepository
 import com.astraedus.nudge.data.repository.UsageRepository
 import com.astraedus.nudge.domain.WebDomainMatcher
 import com.astraedus.nudge.domain.block.CooldownGate
+import com.astraedus.nudge.domain.inapp.ReelPeekSession
 import com.astraedus.nudge.domain.lock.StrictModeEscapeGuard
 import com.astraedus.nudge.domain.model.BlockDecision
 import com.astraedus.nudge.domain.model.BlockMode
@@ -110,6 +111,19 @@ class NudgeAccessibilityService : AccessibilityService() {
     private var grayscaleActiveForPackage: String? = null
 
     private val counterCache = CounterCacheRefresher()
+
+    /**
+     * The "watch the one you were sent, then stop" state for Instagram reels (see [ReelPeekSession]).
+     *
+     * Lives on the service rather than in a `@Singleton` because it describes what is on screen
+     * right now, which is exactly as long as this service lives: a rebind means we have no idea what
+     * the user is looking at, and starting from "no peek is open" is the safe answer.
+     *
+     * Touched only from the accessibility event thread — [onAccessibilityEvent] and the functions it
+     * calls synchronously — which is why it needs no synchronisation. The evaluation coroutine reads
+     * a value captured on that thread, never the object.
+     */
+    private val reelPeek = ReelPeekSession()
 
     private lateinit var interactionHandler: InteractionHandler
     private lateinit var timeRemainingHandler: TimeRemainingHandler
@@ -981,6 +995,11 @@ class NudgeAccessibilityService : AccessibilityService() {
                 interactionHandler.handleViewClicked(packageName)
             }
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
+                // BEFORE the counter handler, which early-returns for any package without the
+                // interaction counter switched on. The peek allowance is not a counter feature and
+                // must not inherit that gate — a Reels rule with no counter would otherwise never
+                // spend its peek, and one swipe would buy an unbounded reels session.
+                noteReelScroll(packageName, event)
                 interactionHandler.handleViewScrolled(packageName) {
                     try { rootInActiveWindow } catch (_: Exception) { null }
                 }
@@ -1452,6 +1471,10 @@ class NudgeAccessibilityService : AccessibilityService() {
     private fun onGlobalDisabled() {
         entryPoint.interactionTracker().clearAllCooldowns()
         entryPoint.emergencyPassManager().cancelAll()
+        // A disabled Nudge must not remember that the user had spent a peek: when it is switched
+        // back on they are somewhere new, and a stale "already swiped" would block the first reel
+        // they open for no reason a user could explain.
+        reelPeek.reset()
         serviceScope.launch(Dispatchers.Main) { hideAllOverlays() }
     }
 
@@ -1507,11 +1530,27 @@ class NudgeAccessibilityService : AccessibilityService() {
         if ((now - lastTime) < contentChangedDebounceMs) return
         lastContentChangedTime[packageName] = now
 
+        // An unreadable tree tells us NOTHING, so it must not reach [ReelPeekSession] — "we lost
+        // sight of the window for a moment" read as "the user left the player" would refund a spent
+        // peek, and endless scrolling would become a matter of swiping and waiting.
         val rootNode = try { rootInActiveWindow } catch (_: Exception) { null } ?: return
-        val feature = entryPoint.inAppDetector().detectFeature(packageName, rootNode) ?: return
+        val detection = entryPoint.inAppDetector().detect(packageName, rootNode)
+
+        // A READABLE tree that shows no reel player is a real observation and does disarm — that is
+        // what lets a second reel in the same DM thread play after the first one was spent.
+        if (reelPeek.onSurfaceDetected(detection?.surface)) {
+            entryPoint.nudgeLogger().i("reel peek armed package=$packageName")
+        }
+
+        val feature = detection?.feature ?: return
         val passthrough = entryPoint.passthroughManager()
 
         if (passthrough.shouldSkipFeatureEvaluation(packageName, feature.key)) return
+
+        // Captured on the event thread: the coroutine below must decide against the screen this
+        // detection saw, not against whatever the session has become by the time it is scheduled.
+        val surface = detection.surface
+        val peekSpent = reelPeek.isSpent
 
         serviceScope.launch {
             val globalEnabled = entryPoint.nudgePreferences().isGlobalEnabled.first()
@@ -1520,10 +1559,52 @@ class NudgeAccessibilityService : AccessibilityService() {
             val decision = entryPoint.evaluateBlockUseCase().invoke(
                 packageName = packageName,
                 detectedFeature = feature.key,
-                includeWholeAppRulesForFeature = !passthrough.shouldSkipForegroundEvaluation(packageName)
+                includeWholeAppRulesForFeature = !passthrough.shouldSkipForegroundEvaluation(packageName),
+                reelSurface = surface,
+                reelPeekSpent = peekSpent
+            )
+            entryPoint.nudgeLogger().d(
+                "feature decision package=$packageName feature=${feature.key} " +
+                    "surface=$surface peekSpent=$peekSpent decision=$decision"
             )
             handleDecision(decision, packageName, feature.key)
         }
+    }
+
+    /**
+     * A scroll happened. If it was a swipe to the NEXT reel while a peek was open, spend the peek
+     * and re-evaluate immediately.
+     *
+     * The re-evaluation is the point: without it the block would wait for the next detection that
+     * survives the 2-second content-change debounce, so the user would get up to two extra seconds
+     * of the feed they just opted out of — small, but it is the exact moment the whole feature is
+     * about, and clearing the debounce costs one node-tree read on an event that has just proven the
+     * user is interacting.
+     *
+     * Reads only [AccessibilityEvent.getSource]'s view id, never its text or content description:
+     * on this screen those are the user's private messages and captions, and the same rule already
+     * governs the debug harvest in [InAppDetector].
+     */
+    private fun noteReelScroll(packageName: String, event: AccessibilityEvent) {
+        if (packageName != InAppDetector.INSTAGRAM_PACKAGE) return
+        if (!reelPeek.isInPlayer || reelPeek.isSpent) return
+
+        val sourceId = try {
+            event.source?.viewIdResourceName
+        } catch (_: Exception) {
+            null
+        }
+        if (!InAppDetector.isReelAdvanceScroll(sourceId)) {
+            entryPoint.nudgeLogger().d("reel scroll ignored source=$sourceId reason=not_the_pager")
+            return
+        }
+
+        if (!reelPeek.onReelScroll()) return
+        entryPoint.nudgeLogger().i("reel peek spent package=$packageName source=$sourceId")
+
+        // Re-evaluate NOW rather than waiting out the debounce this event does not go through.
+        lastContentChangedTime.remove(packageName)
+        detectAndEvaluateFeature(packageName)
     }
 
     /**

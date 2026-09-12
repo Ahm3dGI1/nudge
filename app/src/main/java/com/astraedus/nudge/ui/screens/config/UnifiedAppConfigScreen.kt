@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.astraedus.nudge.domain.inapp.ReelPeek
 import com.astraedus.nudge.domain.model.BlockMode
 import com.astraedus.nudge.domain.model.FeatureMode
 import com.astraedus.nudge.ui.components.CustomTimeDialog
@@ -649,6 +650,7 @@ fun UnifiedAppConfigScreen(
                 state.availableFeatures.forEach { feature ->
                     FeatureOverrideCard(
                         featureName = feature.displayName,
+                        featureKey = feature.key,
                         override = state.featureOverrides[feature.key] ?: FeatureOverride(),
                         onUpdate = { viewModel.setFeatureOverride(feature.key, it) }
                     )
@@ -782,6 +784,7 @@ fun UnifiedAppConfigScreen(
                         state.availableFeatures.forEach { feature ->
                             FeatureOverrideCard(
                                 featureName = feature.displayName,
+                                featureKey = feature.key,
                                 override = state.scheduledFeatureOverrides[feature.key]
                                     ?: FeatureOverride(),
                                 onUpdate = { viewModel.setScheduledFeatureOverride(feature.key, it) }
@@ -888,6 +891,7 @@ private fun InfoButton(explanation: String) {
 @Composable
 private fun FeatureOverrideCard(
     featureName: String,
+    featureKey: String,
     override: FeatureOverride,
     onUpdate: (FeatureOverride) -> Unit
 ) {
@@ -924,6 +928,37 @@ private fun FeatureOverrideCard(
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
+                    )
+                }
+            }
+
+            // "Watch the one you were sent, then stop". Only Reels has an entry point that can
+            // bound an allowance (a clip you were pointed at, as opposed to a feed you opened), and
+            // it is only meaningful once this rule actually blocks something — an INHERIT override
+            // writes no feature rule for the flag to live on.
+            if (featureKey == ReelPeek.FEATURE_KEY && override.mode != FeatureMode.INHERIT) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Allow one reel from DMs and feed",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = override.allowSingleReel,
+                        onCheckedChange = { onUpdate(override.copy(allowSingleReel = it)) }
+                    )
+                }
+                if (override.allowSingleReel) {
+                    Text(
+                        "A reel opened from a message, a link or your feed plays once. " +
+                            "Swiping to the next one blocks. Your home feed stays open, and the " +
+                            "Reels tab stays blocked.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

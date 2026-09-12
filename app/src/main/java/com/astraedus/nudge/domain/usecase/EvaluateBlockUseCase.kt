@@ -7,6 +7,8 @@ import com.astraedus.nudge.data.repository.UsageRepository
 import com.astraedus.nudge.domain.WebDomainMatcher
 import com.astraedus.nudge.domain.engine.BlockEngine
 import com.astraedus.nudge.domain.engine.RuleEvaluator
+import com.astraedus.nudge.domain.inapp.ReelPeek
+import com.astraedus.nudge.domain.inapp.ReelSurface
 import com.astraedus.nudge.domain.model.ActiveRule
 import com.astraedus.nudge.domain.model.BlockDecision
 import com.astraedus.nudge.domain.model.BlockMode
@@ -36,11 +38,18 @@ class EvaluateBlockUseCase @Inject constructor(
      * @param includeWholeAppRulesForFeature Whether feature evaluation should also consider
      *   whole-app rules. This is disabled after a whole-app delay has completed so in-app rules
      *   can still fire without looping the whole-app gate.
+     * @param reelSurface Where [detectedFeature] was reached from, when the detector could tell.
+     *   Only Instagram reports this, and only the "watch the one you were sent" allowance reads it
+     *   ([ReelPeek]). Null means unknown, which enforces normally.
+     * @param reelPeekSpent Whether the user has already swiped past the clip they arrived on. Read
+     *   only alongside [reelSurface]; see [com.astraedus.nudge.domain.inapp.ReelPeekSession].
      */
     suspend fun invoke(
         packageName: String,
         detectedFeature: String? = null,
-        includeWholeAppRulesForFeature: Boolean = true
+        includeWholeAppRulesForFeature: Boolean = true,
+        reelSurface: ReelSurface? = null,
+        reelPeekSpent: Boolean = false
     ): BlockDecision {
         val allRules = blockRuleRepository.getEnabledRules().first()
         val allGroups = blockRuleRepository.getAllGroups().first()
@@ -60,7 +69,22 @@ class EvaluateBlockUseCase @Inject constructor(
                 scheduleEndMinute = rule.scheduleEndMinute,
                 inAppFeatures = rule.inAppFeatures?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() },
                 grayscale = rule.grayscale,
-                webDomains = rule.webDomains
+                webDomains = rule.webDomains,
+                allowSingleReel = rule.allowSingleReel
+            )
+        }.filterNot { rule ->
+            // Applied HERE, before the rules ever reach the engine, rather than as another branch
+            // inside it. The engine's job is "given the rules that apply, what is the strongest
+            // block"; whether a Reels rule applies to the screen in front of the user is a
+            // different question, and one only Instagram's surface detection can answer. Keeping it
+            // out of the engine also means the suppression cannot interact with the daily-budget
+            // and grayscale reasoning, which must still see every OTHER rule for this package.
+            ReelPeek.suppresses(
+                allowSingleReel = rule.allowSingleReel,
+                ruleFeatures = rule.inAppFeatures,
+                detectedFeature = detectedFeature,
+                surface = reelSurface,
+                peekSpent = reelPeekSpent
             )
         }
 

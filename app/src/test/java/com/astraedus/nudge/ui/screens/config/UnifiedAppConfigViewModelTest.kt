@@ -215,4 +215,73 @@ class UnifiedAppConfigViewModelTest {
 
         assertEquals(before, vm.uiState.value.webBlockMode)
     }
+
+    // ── the single-reel allowance is a Strict Mode weakening ─────────────
+
+    /**
+     * The flag lives on a FEATURE rule, and only the app-level rule goes through [RuleWeakening],
+     * so without this check switching it on would unblock the home feed and every DM-opened reel
+     * with one tap and no challenge. These pin the direction of each case rather than the dialog
+     * (the gate itself is `StrictModeGate`'s job).
+     */
+    @Test
+    fun `turning the single-reel allowance on is a weakening`() {
+        val vm = viewModel()
+
+        assertTrue(
+            vm.enablesSingleReel(
+                loaded = mapOf("REELS" to FeatureOverride(allowSingleReel = false)),
+                edited = mapOf("REELS" to FeatureOverride(allowSingleReel = true))
+            )
+        )
+    }
+
+    @Test
+    fun `turning it off is not`() {
+        val vm = viewModel()
+
+        assertFalse(
+            vm.enablesSingleReel(
+                loaded = mapOf("REELS" to FeatureOverride(allowSingleReel = true)),
+                edited = mapOf("REELS" to FeatureOverride(allowSingleReel = false))
+            )
+        )
+    }
+
+    @Test
+    fun `leaving it on is not`() {
+        val vm = viewModel()
+
+        assertFalse(
+            vm.enablesSingleReel(
+                loaded = mapOf("REELS" to FeatureOverride(allowSingleReel = true)),
+                edited = mapOf("REELS" to FeatureOverride(allowSingleReel = true))
+            )
+        )
+    }
+
+    /**
+     * A Reels rule created from nothing WITH the allowance already on. It did not block those
+     * surfaces a moment ago either, so this is strengthening overall — the same call the app-level
+     * check makes for a brand-new rule.
+     */
+    @Test
+    fun `a brand-new Reels rule with the allowance on is not a weakening`() {
+        val vm = viewModel()
+
+        assertFalse(
+            vm.enablesSingleReel(
+                loaded = emptyMap(),
+                edited = mapOf("REELS" to FeatureOverride(allowSingleReel = true))
+            )
+        )
+    }
+
+    /** An untouched screen must never demand the challenge. */
+    @Test
+    fun `no overrides at all is not a weakening`() {
+        val vm = viewModel()
+
+        assertFalse(vm.enablesSingleReel(loaded = emptyMap(), edited = emptyMap()))
+    }
 }

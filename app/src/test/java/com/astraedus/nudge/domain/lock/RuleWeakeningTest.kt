@@ -379,4 +379,45 @@ class RuleWeakeningTest {
         val oldNone = rule(mode = "NONE", webDomains = "instagram.com", webBlockMode = "HARD_BLOCK")
         assertFalse(RuleWeakening.isWeakening(oldNone, new))
     }
+
+    // ── The single-reel allowance ───────────────────────────────────────────
+
+    /**
+     * Turning the "watch the one you were sent" allowance ON stops a Reels rule blocking three
+     * surfaces it used to block: the home feed, and any player until the first swipe. Under Strict
+     * Mode that has to cost the user the unlock challenge like every other softening — otherwise it
+     * is a one-tap way to open the feed the lock exists to keep shut.
+     */
+    @Test
+    fun `enabling allowSingleReel is weakening`() {
+        val old = reelsRule(allowSingleReel = false)
+        val new = reelsRule(allowSingleReel = true)
+
+        assertTrue(RuleWeakening.isWeakening(old, new))
+    }
+
+    @Test
+    fun `disabling allowSingleReel is strengthening`() {
+        val old = reelsRule(allowSingleReel = true)
+        val new = reelsRule(allowSingleReel = false)
+
+        assertFalse(RuleWeakening.isWeakening(old, new))
+    }
+
+    @Test
+    fun `leaving allowSingleReel alone is not weakening`() {
+        assertFalse(
+            RuleWeakening.isWeakening(
+                reelsRule(allowSingleReel = true),
+                reelsRule(allowSingleReel = true)
+            )
+        )
+    }
+
+    private fun reelsRule(allowSingleReel: Boolean) = BlockRule(
+        packageName = "com.instagram.android",
+        mode = "HARD_BLOCK",
+        inAppFeatures = "REELS",
+        allowSingleReel = allowSingleReel
+    )
 }

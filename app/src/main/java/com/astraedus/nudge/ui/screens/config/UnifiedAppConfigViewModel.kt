@@ -46,6 +46,19 @@ class UnifiedAppConfigViewModel @Inject constructor(
      */
     private var existingDefaultRule: BlockRule? = null
 
+    /**
+     * The feature overrides exactly as loaded, so a save can tell which edits WEAKEN protection.
+     *
+     * Only the app-level rule is compared through [RuleWeakening]; the feature rules are rebuilt
+     * from scratch on every save, so there is nothing to diff them against unless we keep this. It
+     * exists for one dimension today — see [enablesSingleReel] — and that narrowness is deliberate:
+     * a general "did any feature override get weaker" answer needs a story for an override being
+     * DELETED (which can inherit a stronger app-level mode and so is not always weakening), and
+     * that is a separate design question this does not pretend to have solved.
+     */
+    private var loadedFeatureOverrides: Map<String, FeatureOverride> = emptyMap()
+    private var loadedScheduledFeatureOverrides: Map<String, FeatureOverride> = emptyMap()
+
     init {
         loadState()
     }
@@ -87,7 +100,8 @@ class UnifiedAppConfigViewModel @Inject constructor(
                     autoKickEnabled = rule.autoKickAfter != null,
                     autoKickAfter = rule.autoKickAfter ?: 30,
                     autoKickCooldownMinutesText = DurationInput.cooldownSecondsToText(rule.autoKickCooldownSeconds),
-                    originalAutoKickCooldownSeconds = rule.autoKickCooldownSeconds
+                    originalAutoKickCooldownSeconds = rule.autoKickCooldownSeconds,
+                    allowSingleReel = rule.allowSingleReel
                 )
             }
 
@@ -101,7 +115,8 @@ class UnifiedAppConfigViewModel @Inject constructor(
                     autoKickEnabled = rule.autoKickAfter != null,
                     autoKickAfter = rule.autoKickAfter ?: 30,
                     autoKickCooldownMinutesText = DurationInput.cooldownSecondsToText(rule.autoKickCooldownSeconds),
-                    originalAutoKickCooldownSeconds = rule.autoKickCooldownSeconds
+                    originalAutoKickCooldownSeconds = rule.autoKickCooldownSeconds,
+                    allowSingleReel = rule.allowSingleReel
                 )
             }
 
@@ -130,6 +145,9 @@ class UnifiedAppConfigViewModel @Inject constructor(
                 ?.takeIf { it != BlockMode.NONE }
                 ?: appLevelMode.takeIf { it != BlockMode.NONE }
                 ?: BlockMode.DELAY
+
+            loadedFeatureOverrides = featureOverrides.toMap()
+            loadedScheduledFeatureOverrides = scheduledFeatureOverridesMap.toMap()
 
             _uiState.value = UnifiedAppConfigState(
                 packageName = packageName,
@@ -242,7 +260,15 @@ class UnifiedAppConfigViewModel @Inject constructor(
 
             // A save only needs the challenge when it weakens an EXISTING rule. Creating a fresh
             // rule (no prior rule) is strengthening, so it saves freely even under Strict Mode.
-            val weakens = old != null && RuleWeakening.isWeakening(old, newDefault)
+            //
+            // The single-reel allowance is checked separately because it lives on a FEATURE rule,
+            // and only the app-level rule goes through [RuleWeakening] here. Without this, switching
+            // it on would unblock the home feed and every DM-opened reel with one tap and no
+            // challenge — a hole in the commitment lock, on the one axis this screen has just
+            // learned to soften.
+            val weakens = (old != null && RuleWeakening.isWeakening(old, newDefault)) ||
+                enablesSingleReel(loadedFeatureOverrides, state.featureOverrides) ||
+                enablesSingleReel(loadedScheduledFeatureOverrides, state.scheduledFeatureOverrides)
             if (weakens) {
                 strictModeGate.run(prompt = "Weaken blocking for this app") {
                     performSave(state, newDefault)
@@ -251,6 +277,21 @@ class UnifiedAppConfigViewModel @Inject constructor(
                 performSave(state, newDefault)
             }
         }
+    }
+
+    /**
+     * True when [edited] turns the single-reel allowance ON for a feature that did not have it.
+     *
+     * One direction only: turning it off is strengthening and must save freely. A feature absent
+     * from [loaded] never had it, so a brand-new Reels rule created WITH the allowance still counts
+     * as strengthening overall (it did not block those surfaces a moment ago either) — consistent
+     * with the "creating a fresh rule is never weakening" rule the app-level check follows.
+     */
+    internal fun enablesSingleReel(
+        loaded: Map<String, FeatureOverride>,
+        edited: Map<String, FeatureOverride>
+    ): Boolean = edited.any { (featureKey, override) ->
+        override.allowSingleReel && loaded[featureKey]?.allowSingleReel == false
     }
 
     private suspend fun performSave(state: UnifiedAppConfigState, newDefault: BlockRule) {
@@ -283,7 +324,8 @@ class UnifiedAppConfigViewModel @Inject constructor(
                         override.autoKickCooldownMinutesText,
                         override.originalAutoKickCooldownSeconds
                     ),
-                    showCounter = state.showCounter
+                    showCounter = state.showCounter,
+                    allowSingleReel = override.allowSingleReel
                 )
             )
         }
@@ -329,6 +371,7 @@ class UnifiedAppConfigViewModel @Inject constructor(
                             override.originalAutoKickCooldownSeconds
                         ),
                         showCounter = state.showCounter,
+                        allowSingleReel = override.allowSingleReel,
                         scheduleDays = scheduleDaysStr,
                         scheduleStartMinute = startMin,
                         scheduleEndMinute = endMin

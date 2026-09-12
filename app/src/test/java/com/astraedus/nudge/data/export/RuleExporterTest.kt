@@ -6,6 +6,7 @@ import com.astraedus.nudge.data.db.entity.BlockRule
 import com.astraedus.nudge.domain.model.BlockMode
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -284,6 +285,62 @@ class RuleExporterTest {
         assertEquals(1, result.rules.size)
         assertEquals("NONE", result.rules[0].mode)
         assertEquals("HARD_BLOCK", result.rules[0].webBlockMode)
+    }
+
+    /**
+     * A Reels rule with the "watch the one you were sent" allowance on is a rule that blocks LESS
+     * than a plain one. Losing the field on restore would silently re-block the user's DMs and feed
+     * — the opposite direction to the `webBlockMode` loss above, and just as much a surprise.
+     */
+    @Test
+    fun `roundtrip preserves allowSingleReel on a Reels rule`() {
+        val rules = listOf(
+            BlockRule(
+                id = 1,
+                packageName = "com.instagram.android",
+                mode = "HARD_BLOCK",
+                enabled = true,
+                inAppFeatures = "REELS",
+                allowSingleReel = true
+            )
+        )
+
+        val json = exporter.exportRules(rules, emptyList(), emptyMap())
+        val result = exporter.importRules(json)
+
+        assertNull(result.error)
+        assertEquals(1, result.rules.size)
+        assertEquals("REELS", result.rules[0].inAppFeatures)
+        assertTrue(result.rules[0].allowSingleReel)
+    }
+
+    /**
+     * An export written before the column existed, or a hand-edited file. Absent must mean OFF: a
+     * missing key can never be allowed to hand a restored rule an allowance its author never granted.
+     */
+    @Test
+    fun `import of an export without allowSingleReel blocks every reel surface`() {
+        val json = """
+        {
+          "version": 1,
+          "exportedAt": 1700000000000,
+          "rules": [{
+            "packageName": "com.instagram.android",
+            "groupName": null,
+            "mode": "HARD_BLOCK",
+            "delaySeconds": 15,
+            "enabled": true,
+            "inAppFeatures": "REELS"
+          }],
+          "groups": []
+        }
+        """.trimIndent()
+
+        val result = exporter.importRules(json)
+
+        assertNull(result.error)
+        assertEquals(1, result.rules.size)
+        assertFalse(result.rules[0].allowSingleReel)
     }
 
     @Test

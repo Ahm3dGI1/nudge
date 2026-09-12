@@ -43,5 +43,18 @@ data class BlockRule(
     val webBlockMode: String? = null,
     // Time-based auto-kick: send user to home screen after this many minutes of foreground time in
     // one session (null = disabled). Independent of [autoKickAfter]; whichever fires first kicks.
-    val autoKickAfterMinutes: Int? = null
+    val autoKickAfterMinutes: Int? = null,
+    /**
+     * "Watch the one you were sent, then stop", for a REELS feature rule.
+     *
+     * False (the default, and what every rule written before this column existed carries) means a
+     * Reels rule blocks every reel surface, which is the historical behaviour. True narrows it to
+     * the surfaces that are actually a FEED: the Reels tab always, and a full-screen player once the
+     * user swipes past the clip they arrived on. A reel opened from a DM, a share link or the home
+     * feed plays once, and the home feed itself stays open.
+     *
+     * Inert on any rule that is not feature-scoped to REELS. Resolution lives in
+     * [com.astraedus.nudge.domain.inapp.ReelPeek.suppresses] — never read this field raw.
+     */
+    val allowSingleReel: Boolean = false
 )

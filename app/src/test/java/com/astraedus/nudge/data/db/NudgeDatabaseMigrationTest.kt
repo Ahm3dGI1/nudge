@@ -170,6 +170,26 @@ class NudgeDatabaseMigrationTest {
         }
     }
 
+    /**
+     * The peek allowance defaults OFF, and that is the whole point of the column's shape: every rule
+     * that exists when this migration runs was written to block every reel surface, and a migration
+     * must never move a user's rules toward blocking LESS. There is deliberately no repair UPDATE
+     * here (unlike 9->10) — nothing in the wild is misconfigured by this column's absence.
+     */
+    @Test
+    fun `MIGRATION_10_11 adds allowSingleReel defaulting to off`() {
+        val db = RecordingDatabase()
+
+        NudgeDatabase.MIGRATION_10_11.migrate(db.proxy)
+
+        assertEquals(
+            listOf(
+                "ALTER TABLE block_rules ADD COLUMN allowSingleReel INTEGER NOT NULL DEFAULT 0"
+            ),
+            db.sql
+        )
+    }
+
     @Test
     fun `all migrations registered from version 1 to current`() {
         val allMigrations = listOf(
@@ -181,10 +201,11 @@ class NudgeDatabaseMigrationTest {
             NudgeDatabase.MIGRATION_6_7,
             NudgeDatabase.MIGRATION_7_8,
             NudgeDatabase.MIGRATION_8_9,
-            NudgeDatabase.MIGRATION_9_10
+            NudgeDatabase.MIGRATION_9_10,
+            NudgeDatabase.MIGRATION_10_11
         )
 
-        val currentVersion = 10
+        val currentVersion = 11
 
         // Every version gap from 1 to current must have a migration
         for (v in 1 until currentVersion) {

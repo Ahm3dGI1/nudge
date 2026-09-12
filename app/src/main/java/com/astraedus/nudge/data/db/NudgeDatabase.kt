@@ -19,7 +19,7 @@ import com.astraedus.nudge.data.db.entity.UsageEvent
         AppGroupMember::class,
         UsageEvent::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class NudgeDatabase : RoomDatabase() {
@@ -132,6 +132,28 @@ abstract class NudgeDatabase : RoomDatabase() {
                 db.execSQL(
                     "UPDATE block_rules SET webBlockMode = 'DELAY' " +
                         "WHERE mode = 'NONE' AND webDomains IS NOT NULL AND webDomains != ''"
+                )
+            }
+        }
+
+        /**
+         * The "watch the one you were sent, then stop" allowance for Reels rules
+         * ([com.astraedus.nudge.data.db.entity.BlockRule.allowSingleReel]).
+         *
+         * Defaults to 0 (off) so every existing rule keeps blocking every reel surface exactly as it
+         * does today — this feature can only ever be turned on deliberately, from the app config
+         * screen. NOT NULL with a default rather than nullable: unlike `webBlockMode`, there is no
+         * third "inherit" state to express, and a nullable boolean would invite a null-means-what
+         * question at every read site.
+         *
+         * Deliberately no repair UPDATE. Nothing in the wild is misconfigured by the absence of this
+         * column, so unlike 9->10 there is nothing to fix — and a repair here could only ever move
+         * rules toward blocking LESS, which is never something a migration should decide for a user.
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE block_rules ADD COLUMN allowSingleReel INTEGER NOT NULL DEFAULT 0"
                 )
             }
         }

@@ -121,7 +121,8 @@ class RuleExporter @Inject constructor() {
                 autoKickCooldownSeconds = rule.autoKickCooldownSeconds,
                 webDomains = rule.webDomains,
                 autoKickAfterMinutes = rule.autoKickAfterMinutes,
-                webBlockMode = rule.webBlockMode
+                webBlockMode = rule.webBlockMode,
+                allowSingleReel = rule.allowSingleReel
             )
         }
 
@@ -288,6 +289,7 @@ class RuleExporter @Inject constructor() {
             obj.put("webDomains", rule.webDomains ?: JSONObject.NULL)
             obj.put("autoKickAfterMinutes", rule.autoKickAfterMinutes ?: JSONObject.NULL)
             obj.put("webBlockMode", rule.webBlockMode ?: JSONObject.NULL)
+            obj.put("allowSingleReel", rule.allowSingleReel)
             rulesArray.put(obj)
         }
         root.put("rules", rulesArray)
@@ -526,7 +528,11 @@ class RuleExporter @Inject constructor() {
             // Null (absent, or written by an older Nudge) = inherit the app-level mode, which is
             // exactly what those exports meant. An unrecognized value is tolerated rather than
             // failing the import: WebBlockMode falls back to the app-level mode for it.
-            webBlockMode = obj.optStringOrNull("webBlockMode")
+            webBlockMode = obj.optStringOrNull("webBlockMode"),
+            // Absent (an older export, or a hand-edited file) = false = block every reel surface,
+            // which is what those rules meant. The default direction matters here: a missing key
+            // must never be able to hand a restored rule an allowance its author never granted.
+            allowSingleReel = obj.optBoolean("allowSingleReel", false)
         )
     }
 

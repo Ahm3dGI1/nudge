@@ -47,6 +47,8 @@ object RuleWeakening {
      *  - autoKickCooldownSeconds lowered (less time locked out after a kick)
      *  - web enforcement softened: the mode a rule's websites block with (webBlockMode, falling
      *    back to mode) lowered, or the domains removed entirely, when web blocking was configured
+     *  - allowSingleReel switched on (reels opened from a DM or the feed, and the home feed itself,
+     *    stop being blocked)
      *
      * Strengthening or unchanged on all dimensions -> false.
      */
@@ -79,6 +81,11 @@ object RuleWeakening {
         // their own weakening axis: without this, Strict Mode could be sidestepped by softening
         // (or deleting) website blocking while leaving the app-level rule untouched.
         if (isWebEnforcementWeakened(old, new)) return true
+
+        // Turning the "watch the one you were sent" allowance ON stops a Reels rule blocking three
+        // surfaces it used to block (the home feed, and any player until the first swipe). Turning
+        // it off is strengthening and saves freely.
+        if (!old.allowSingleReel && new.allowSingleReel) return true
 
         return false
     }

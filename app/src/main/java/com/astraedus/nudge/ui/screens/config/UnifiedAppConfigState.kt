@@ -11,7 +11,12 @@ data class FeatureOverride(
     val autoKickEnabled: Boolean = false,
     val autoKickAfter: Int = 30,
     val autoKickCooldownMinutesText: String = "1",
-    val originalAutoKickCooldownSeconds: Int = 60
+    val originalAutoKickCooldownSeconds: Int = 60,
+    /**
+     * REELS only: "watch the one you were sent, then stop". Inert on every other feature, and only
+     * offered by the UI for Reels. See [com.astraedus.nudge.domain.inapp.ReelPeek].
+     */
+    val allowSingleReel: Boolean = false
 )
 
 @Immutable
