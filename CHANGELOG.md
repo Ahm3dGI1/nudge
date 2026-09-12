@@ -2,6 +2,11 @@
 
 All notable changes to Nudge are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- **"Allow one reel from DMs and feed", a new option on a Reels rule.** Blocking Reels used to be all or nothing, which also blocked the reel a friend sends you in a message — and your home feed with it. Switch this on and a reel opened from a message, a link, a profile or your own feed plays once; swiping to the next one blocks, because that swipe is where being sent something turns into scrolling. Your home feed stays open so you can see what your friends have posted, and the Reels tab stays blocked exactly as before. It is off by default: no rule you already have changes behaviour. Under Strict Mode, switching it on asks for the unlock challenge like any other change that blocks less.
+
 ## [1.15.4] - 2026-09-07
 
 ### Fixed

@@ -142,7 +142,7 @@ AccessibilityService: TYPE_WINDOW_STATE_CHANGED
 
 ## Database
 
-Room DB version 10. Migrations: 1->2 (schedule/inapp/grayscale), 2->3 (userChangedMind), 3->4 (showCounter), 4->5 (autoKickAfter), 5->6 (showTimeRemaining, autoKickCooldownSeconds), 6->7 (webDomains), 7->8 (autoKickAfterMinutes), **8->9 (DROPS the dead `usage_events.durationMs` column, issue #22)**, 9->10 (`BlockRule.webBlockMode`, issue [#21](https://github.com/astraedus/nudge/issues/21); also repairs the rows that bug created).
+Room DB version 11. Migrations: 1->2 (schedule/inapp/grayscale), 2->3 (userChangedMind), 3->4 (showCounter), 4->5 (autoKickAfter), 5->6 (showTimeRemaining, autoKickCooldownSeconds), 6->7 (webDomains), 7->8 (autoKickAfterMinutes), **8->9 (DROPS the dead `usage_events.durationMs` column, issue #22)**, 9->10 (`BlockRule.webBlockMode`, issue [#21](https://github.com/astraedus/nudge/issues/21); also repairs the rows that bug created), 10->11 (`BlockRule.allowSingleReel`, the single-reel allowance; defaults OFF so no existing rule changes behaviour).
 
 `NudgeDatabaseMigrationTest` is a **JVM** test (a `SupportSQLiteDatabase` `Proxy` records the `execSQL` calls), not an instrumented one — so migrations are gated by `./gradlew test` with no device. It also asserts every version gap from 1 to the current version has a registered migration, which is what catches "bumped the version, forgot `DatabaseModule.addMigrations`".
 
@@ -156,7 +156,7 @@ one that matches what you are about to edit. Nothing here is optional reading if
 
 | Doc | Scope | Read before |
 |---|---|---|
-| `docs/architecture/rules-and-features.md` | Schedules, in-app feature blocking (Shorts/Reels/TikTok), grayscale, editable overlay messages, rule editor | editing rule models, `InAppDetector`, `NudgeMessages`, the rule editor, Settings |
+| `docs/architecture/rules-and-features.md` | Schedules, in-app feature blocking (Shorts/Reels/TikTok), the single-reel allowance, grayscale, editable overlay messages, rule editor | editing rule models, `InAppDetector`, `ReelPeek`, `NudgeMessages`, the rule editor, Settings |
 | `docs/architecture/counter-overlay-and-autokick.md` | Interaction counter, time-remaining overlay, both auto-kick triggers, cooldown, duration inputs | editing `service/` overlay code, `InteractionTracker`, `CounterCacheRefresher`, `AutoKick*`, `DurationInput` |
 | `docs/architecture/foreground-detection.md` | What "the user is in app P" means: transient windows, the Home/launcher path, the content-change fallback, picture-in-picture, passthrough clearing | touching the event dispatch in `NudgeAccessibilityService`, `PassthroughManager`, or adding ANY early return to the hot path |
 | `docs/architecture/block-overlay-lifecycle.md` | Overlay lifecycle invariant (#8), the walk-away path, the daily 2-minute pass | editing `ui/overlay/`, `RecordWalkAwayUseCase`, `EmergencyPass*` |
