@@ -70,6 +70,26 @@ class BlockEngine @Inject constructor(
         // Check whether any applicable rule wants grayscale
         val wantsGrayscale = applicableRules.any { it.grayscale }
 
+        /**
+         * Whether THIS rule's block should be enforced by backing out of the feature rather than by
+         * the block overlay.
+         *
+         * Deliberately per-WINNING-rule, not `applicableRules.any { … }` like grayscale above:
+         * grayscale is an ambient effect any applicable rule may ask for, but this decides how ONE
+         * block is carried out, and the rule that did not win has no say in it. Taking `any` here
+         * would let a soft Reels rule downgrade the enforcement of a whole-app hard block that
+         * happened to be active at the same time.
+         *
+         * Requires the rule to be scoped to the feature that was actually DETECTED. A whole-app rule
+         * has no feature to leave — backing out of an app is just leaving it — and a rule scoped to
+         * some other feature is not what is being enforced here. That check lives here rather than
+         * at the call site so [BlockDecision.Block.exitFeature] can be trusted as-is by the service.
+         */
+        fun exitFeatureFor(rule: ActiveRule): Boolean =
+            rule.exitFeatureOnBlock &&
+                detectedFeature != null &&
+                detectedFeature in (rule.inAppFeatures ?: emptyList())
+
         // Check for unconditional HARD_BLOCK (no daily limit)
         val unconditionalHardBlockRule = applicableRules.firstOrNull {
             it.mode == BlockMode.HARD_BLOCK && it.dailyLimitMinutes == null
@@ -81,7 +101,8 @@ class BlockEngine @Inject constructor(
                 grayscale = wantsGrayscale,
                 ruleName = unconditionalHardBlockRule.ruleName,
                 dailyTimeRemainingMs = dailyTimeRemainingMs,
-                dailyLimitMinutes = minDailyLimit
+                dailyLimitMinutes = minDailyLimit,
+                exitFeature = exitFeatureFor(unconditionalHardBlockRule)
             )
         }
 
@@ -93,6 +114,11 @@ class BlockEngine @Inject constructor(
         if (timeBudgetRule != null) {
             logger.i("block package=$packageName reason=time_budget_exceeded grayscale=$wantsGrayscale")
             val budgetRuleName = timeBudgetRule.ruleName?.let { "$it (limit reached)" }
+            // No `exitFeature` here, even if the rule carries the flag. An exhausted daily budget is
+            // a statement about the whole app's allowance for the day, not about one surface, and
+            // backing out of the feature would leave the user in an app they have run out of time
+            // for — free to spend the rest of the day in every other part of it. The overlay is the
+            // right stop for a budget, and it is the stop every budget has always used.
             return BlockDecision.Block(
                 BlockMode.HARD_BLOCK,
                 grayscale = wantsGrayscale,
@@ -115,7 +141,8 @@ class BlockEngine @Inject constructor(
                 wantsGrayscale,
                 ruleName = delayRule.ruleName,
                 dailyTimeRemainingMs = dailyTimeRemainingMs,
-                dailyLimitMinutes = minDailyLimit
+                dailyLimitMinutes = minDailyLimit,
+                exitFeature = exitFeatureFor(delayRule)
             )
         }
 
@@ -132,7 +159,8 @@ class BlockEngine @Inject constructor(
                 wantsGrayscale,
                 ruleName = breathingRule.ruleName,
                 dailyTimeRemainingMs = dailyTimeRemainingMs,
-                dailyLimitMinutes = minDailyLimit
+                dailyLimitMinutes = minDailyLimit,
+                exitFeature = exitFeatureFor(breathingRule)
             )
         }
 

@@ -10,5 +10,7 @@ data class ActiveRule(
     val scheduleEndMinute: Int? = null,
     val inAppFeatures: List<String>? = null,
     val grayscale: Boolean = false,
-    val ruleName: String? = null
+    val ruleName: String? = null,
+    /** See [com.astraedus.nudge.data.db.entity.BlockRule.exitFeatureOnBlock]. */
+    val exitFeatureOnBlock: Boolean = false
 )

@@ -19,5 +19,7 @@ data class BlockRuleData(
      * [com.astraedus.nudge.data.db.entity.BlockRule.allowSingleReel] and
      * [com.astraedus.nudge.domain.inapp.ReelPeek].
      */
-    val allowSingleReel: Boolean = false
+    val allowSingleReel: Boolean = false,
+    /** See [com.astraedus.nudge.data.db.entity.BlockRule.exitFeatureOnBlock]. */
+    val exitFeatureOnBlock: Boolean = false
 )
